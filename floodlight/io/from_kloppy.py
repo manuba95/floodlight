@@ -31,7 +31,7 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     pitch: Pitch
         Pitch object with actual pitch length and width.
     """
-    from kloppy.domain import AttackingDirection
+    from kloppy.domain import AttackingDirection # as above
 
     home_team, away_team = metadata.teams
 
@@ -210,7 +210,7 @@ def get_position_data(
         Dictionary with ball status Code objects for each segment
     """
 
-    try:
+    try: # move imports to the top of the file
         from kloppy.domain import TrackingDataset
     except ImportError:
         raise ImportError(
