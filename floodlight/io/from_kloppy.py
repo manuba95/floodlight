@@ -31,7 +31,7 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     pitch: Pitch
         Pitch object with actual pitch length and width.
     """
-    from kloppy.domain import AttackingDirection  # as above
+    from kloppy.domain import AttackingDirection  # import at the top of the file
 
     home_team, away_team = metadata.teams
 
@@ -39,8 +39,10 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     periods = {}
     directions = {}
 
+    # use metadata_dict.update() for "framerate", "length", "width", etc.
     metadata_dict["framerate"] = metadata.frame_rate
     metadata_dict["length"] = (
+        # shouldn't this be pitch_dimentsion.pitch_length/width? Then the dict would already have no kloppy objects
         metadata.pitch_dimensions.x_dim if metadata.pitch_dimensions else None
     )
     metadata_dict["width"] = (
@@ -50,12 +52,20 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     metadata_dict["away_tID"] = away_team.team_id
 
     for period in metadata.periods:
+        # We are currently not very consistent in naming our periods but rather keep it more or less to the naming convention of the provider.
+        # E.g., with secondspectrum we use HT1/2, with the DFL data, we use firstHalf/secondHalf
+        # This may not be optimal from our side, and I think a good solution would be to use Kloppys naming convention
+        # when transforming from Kloppy to floodlight, so e.g., "Period_1"/"P1" or something similar.
+        # Any thoughts?
         segment = f"HT{period.id}"
 
         if isinstance(period.start_timestamp, timedelta) and isinstance(
             period.end_timestamp, timedelta
         ):
+            # is this an optional information in Kloppy?
             if metadata.frame_rate:
+                # this refers to the frame_id of the first frame, right? so 10000 in this case because of the DFL convention
+                # Would it make sense to be more specific in the naming here?
                 start_frame = int(
                     period.start_timestamp.total_seconds() * metadata.frame_rate
                 )
@@ -64,18 +74,28 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
                 )
                 periods[segment] = (start_frame, end_frame + 1)
             else:
+                # how do you infer the total seconds if you don't have a framerate?
                 start_frame = int(period.start_timestamp.total_seconds())
                 end_frame = int(period.end_timestamp.total_seconds())
                 periods[segment] = (start_frame, end_frame + 1)
         else:
             periods[segment] = (0, 0)  # Placeholder
 
+    #### WHERE IS THE PERIODS[SEGMENT] USED LATER?? AS IT CHANGES DEPENDING ON THE AVAILABLE DATA
+
+
     # Process playing directions
+    # why not keep this in the same for-loop as above?
     for period in metadata.periods:
         segment = f"HT{period.id}"
         directions[segment] = {}
 
         # Get attacking direction for home team for this period
+        # just to understand: is metadata.orientation inferred based on the position data?
+        # I think this works well within the "two teams and periods" type of data we get
+        # from official matches but it doesn't really work with GPS/LPS data, experimental data, etc.
+        # I think right now most parsers result in the XY.direction attribute to be None because it's
+        # not explicit in the data.
         home_attacking_direction = AttackingDirection.from_orientation(
             orientation=metadata.orientation, period=period
         )
@@ -88,10 +108,13 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
             directions[segment]["Home"] = "rl"
             directions[segment]["Away"] = "lr"
         else:
+            # I think setting this to None is better since its an optional attribute.
             # Default or NOT_SET case
             directions[segment]["Home"] = "lr"
             directions[segment]["Away"] = "rl"
 
+    # I think it's better write an explicit "get_pitch_from_kloppy() function that extracts the Pitch dimentions from the meta data
+    # do you store
     pitch = Pitch.from_template(
         template_name="secondspectrum",  # or appropriate template
         length=metadata.coordinate_system.pitch_length,
