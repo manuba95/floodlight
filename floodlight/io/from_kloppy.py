@@ -1,3 +1,4 @@
+# restructure imports: standard, third party, local
 from floodlight import Teamsheet, Code, XY, Pitch
 from floodlight.core.events import Events
 
@@ -9,6 +10,7 @@ import numpy as np
 from datetime import timedelta
 
 
+# reorder functions: main/public, private
 def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     """Reads metadata from kloppy Metadata object and extracts information about match
     metainfo, periods, playing directions, and the pitch.
@@ -43,7 +45,9 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     metadata_dict["framerate"] = metadata.frame_rate
     metadata_dict["length"] = (
         # shouldn't this be pitch_dimentsion.pitch_length/width? Then the dict would already have no kloppy objects
-        metadata.pitch_dimensions.x_dim if metadata.pitch_dimensions else None
+        metadata.pitch_dimensions.x_dim
+        if metadata.pitch_dimensions
+        else None
     )
     metadata_dict["width"] = (
         metadata.pitch_dimensions.y_dim if metadata.pitch_dimensions else None
@@ -80,9 +84,6 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
                 periods[segment] = (start_frame, end_frame + 1)
         else:
             periods[segment] = (0, 0)  # Placeholder
-
-    #### WHERE IS THE PERIODS[SEGMENT] USED LATER?? AS IT CHANGES DEPENDING ON THE AVAILABLE DATA
-
 
     # Process playing directions
     # why not keep this in the same for-loop as above?
@@ -125,6 +126,7 @@ def _get_metadata(metadata: "Metadata") -> Tuple[Dict, Dict, Dict, Pitch]:
     return metadata_dict, periods, directions, pitch
 
 
+# This whole function should be public.
 def _get_teamsheets(metadata: "MetaData") -> Dict[str, Teamsheet]:
     """
     Convert kloppy Metadata object to teamsheets structure.
@@ -135,22 +137,31 @@ def _get_teamsheets(metadata: "MetaData") -> Dict[str, Teamsheet]:
     Returns:
         dict: Teamsheets dictionary with "Home" and "Away" keys
     """
+    # Will this be expanded with GPS parsers to support != 2 than two teams?
     # Extract teams
     home_team, away_team = metadata.teams
 
     # Initialize teamsheets structure
+    # Again thinking about e.g. GPS data with different group structures than Home/Away.
+    # Since metadata.teams is a list, it could contain any number of teams already.
+    # The team's identifyer then be chosen depending on the availability.
+    # E.g. if ground: team_mapping = ground.capitalize() else: name
     teamsheets = {team: None for team in ["Home", "Away"]}
 
     # Map teams to their ground designation
     team_mapping = {"Home": home_team, "Away": away_team}
 
     # Process each team
+    # After the following, maybe it makes more sense to loop through the metadata.teams list here?
     for team_ground in ["Home", "Away"]:
         team_obj = team_mapping[team_ground]
 
         # Initialize teamsheet structure
         teamsheet = {
-            column: [] for column in ["precedence", "player", "jID", "pID", "position"]
+            # I think "precedence can be dropped since it seems to be something specific to the secondspectrum parser
+            # generally, all availible Player attributes could be included in the Teamsheet
+            column: []
+            for column in ["precedence", "player", "jID", "pID", "position"]
         }
 
         # Process each player in the team
@@ -171,9 +182,11 @@ def _get_teamsheets(metadata: "MetaData") -> Dict[str, Teamsheet]:
             )
             jID = player.jersey_no
             pID = player.player_id
+            # I think we can drop this precedence logic totally.
             precedence = _get_position_precedence(player.starting_position)
 
             # Add to teamsheet
+            # Also add team name and team ID if possible
             teamsheet["player"].append(name)
             teamsheet["position"].append(position)
             teamsheet["jID"].append(jID)
@@ -182,6 +195,10 @@ def _get_teamsheets(metadata: "MetaData") -> Dict[str, Teamsheet]:
 
         # Convert to DataFrame and sort
         teamsheet_df = pd.DataFrame(teamsheet)
+        # is there a logic the players get sorted in the teams.players list?
+        # I don't think it's necessary to sort the teamsheet_df. If the user wants
+        # the xID in a different order, they can create a Teamsheet, sort it however they like
+        # and then use it as an argument in the parser
         teamsheet_df.sort_values("precedence", inplace=True)
         teamsheet_df.drop(["precedence"], axis=1, inplace=True)
         teamsheet_df.reset_index(drop=True, inplace=True)
@@ -248,8 +265,11 @@ def get_position_data(
 
     # Get metadata information
     metadata_dict, periods, directions, pitch = _get_metadata(tracking_dataset.metadata)
-    teamsheets = _get_teamsheets(tracking_dataset.metadata)
 
+    # make teamsheets an optional argument so the user can pass individual teamsheets to the function
+    # check if teamsheets were provided here
+    teamsheets = _get_teamsheets(tracking_dataset.metadata)
+    # if a get_teamsheets function returns a dict of teamsheets just loop through the dict
     teamsheet_home = teamsheets["Home"]
     teamsheet_away = teamsheets["Away"]
     if "xID" not in teamsheet_home.teamsheet.columns:
@@ -262,6 +282,7 @@ def get_position_data(
 
     df = tracking_dataset.to_df(engine="pandas")
 
+    # again, this should be structured so it works with other team constellations than home/away
     home_team, away_team = tracking_dataset.metadata.teams
     home_team_id = home_team.team_id
     away_team_id = away_team.team_id
@@ -276,6 +297,7 @@ def get_position_data(
         segment_df = df[df["period_id"] == period.id].copy()
         xy_objects[segment] = {}
 
+        # this should probably be optional? Why not return a Code object from the _create_code() functions?
         possession_code = _create_possession_code(
             segment_df, home_team_id, away_team_id
         )
@@ -285,7 +307,7 @@ def get_position_data(
             definitions={"H": "Home", "A": "Away"},
             framerate=fps,
         )
-
+        # also optional
         ballstatus_code = _create_ballstatus_code(segment_df)
         ballstatus_objects[segment] = Code(
             code=ballstatus_code,
@@ -305,7 +327,7 @@ def get_position_data(
                 framerate=fps,
                 direction=directions[segment][team_name],
             )
-
+        # probably also optional?
         ball_xy_data = np.column_stack(
             [segment_df["ball_x"].values, segment_df["ball_y"].values]
         )
@@ -345,6 +367,7 @@ def _create_possession_code(
     possession_code = np.full(len(df), np.nan, dtype=object)  # Default to home
 
     away_mask = df["ball_owning_team_id"] == away_team_id
+    # Code objects methods rely on the code array to contain integers
     possession_code[away_mask] = "A"
 
     home_mask = df["ball_owning_team_id"] == home_team_id
@@ -372,11 +395,13 @@ def _create_ballstatus_code(df: pd.DataFrame) -> np.ndarray:
     ballstatus_code = np.full(len(df), "A", dtype=object)
 
     dead_mask = df["ball_state"].astype(str) == BallState.DEAD.value
+    # again, this should be integers, we use dead = 0, alive = 1
     ballstatus_code[dead_mask] = "D"
 
     return ballstatus_code
 
 
+# I think this is duplicate?
 def _create_ballstatus_code(df: pd.DataFrame) -> np.ndarray:
     """
     Create ball status code array from dataframe.
@@ -402,7 +427,10 @@ def _create_ballstatus_code(df: pd.DataFrame) -> np.ndarray:
 
 
 def _extract_team_xy_data(
-    df: pd.DataFrame, team: "Team", teamsheet: "Teamsheet"
+    # typing of team and teamsheet is incorrect (string). maybe a bit more explicit than "df"
+    df: pd.DataFrame,
+    team: "Team",
+    teamsheet: "Teamsheet",
 ) -> np.ndarray:
     """
     Extract XY coordinate data for a team from dataframe.
@@ -422,13 +450,17 @@ def _extract_team_xy_data(
         Array with shape (n_frames, 2*n_players) containing x,y coordinates
     """
     # Ensure teamsheet has xIDs
+    # is this necessary? Since it gets checked in the main function
     if "xID" not in teamsheet.teamsheet.columns:
         teamsheet.add_xIDs()
 
     # Get mapping from jersey number to array index (xID)
+    # this expects the jID to exist and be unique. can we expect that? you could use the
+    # "player" column, since it has to exist in the Teamsheets and its likely to be unique (name)
     links_jID_to_xID = teamsheet.get_links("jID", "xID")
 
     # Get the maximum xID to determine array size
+    # n_players = len(links_jID_to_xID) would be sufficient?
     max_xID = max(links_jID_to_xID.values()) if links_jID_to_xID else 0
     n_players = max_xID + 1  # xID is 0-indexed
 
