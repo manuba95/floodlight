@@ -28,6 +28,21 @@ def example_xy_object_geometry():
     return xy
 
 
+# sample data with one frame having all nan (horizontal nan slice)
+@pytest.fixture()
+def example_xy_object_geometry_horizontal_nan():
+    xy = XY(
+        np.array(
+            (
+                (1, 1, 2, -2, 3, 3),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (1.5, 2, 3, 4, 5, 6),
+            )
+        )
+    )
+    return xy
+
+
 # sample data for testing kinematic models
 @pytest.fixture()
 def example_xy_object_kinematics():
@@ -92,81 +107,43 @@ def example_xy_objects_space_control() -> Tuple[XY, XY]:
     return xy1, xy2
 
 
-# Sample XY object with no nan
-@pytest.fixture
-def xy_data():
-    data = np.array(
-        [
-            [
-                10,
-                42,
-                59,
-                43,
-                61,
-                21,
-                63,
-                57,
-                36,
-                57,
-                18,
-                27,
-                15,
-                24,
-                18,
-                11,
-                51,
-                49,
-                39,
-                1,
-                57,
-                58,
-            ],
-            [
-                22,
-                29,
-                32,
-                107,
-                54,
-                25,
-                50,
-                8,
-                40,
-                69,
-                21,
-                25,
-                98,
-                64,
-                101,
-                102,
-                88,
-                36,
-                93,
-                55,
-                57,
-                43,
-            ],
-        ]
+# sample data with one frame having all nan (horizontal nan slice) for two teams
+@pytest.fixture()
+def example_xy_objects_horizontal_nan() -> Tuple[XY, XY]:
+    xy1 = XY(
+        xy=np.array(
+            (
+                (0, 0, 10, 10, 20, 20),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (5, 5, 15, 15, 25, 25),
+            )
+        ),
+        framerate=20,
     )
-    return XY(data)
+    xy2 = XY(
+        xy=np.array(
+            (
+                (100, 0, 110, 10, 120, 20),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (105, 5, 115, 15, 125, 25),
+            )
+        ),
+        framerate=20,
+    )
+
+    return xy1, xy2
 
 
-# Sample XY object with all nan
-@pytest.fixture
-def xy_all_nan():
-    data = np.empty((2, 22))  # Assuming 2 frames
-    data[:] = np.nan
-    return XY(data)
+# sample data with single player
+@pytest.fixture()
+def example_xy_object_single_player():
+    xy = XY(np.array(((1, 1), (2, 2), (3, 3))))
+    return xy
 
 
-# Sample XY object with all zero
-@pytest.fixture
-def xy_all_zeros():
-    data = np.zeros((2, 22))  # 2 frames
-    return XY(data)
-
-
-# Sample XY object with all ones
-@pytest.fixture
-def xy_all_ones():
-    data = np.ones((2, 22))  # 2 frames
-    return XY(data)
+# sample data with single player for two teams
+@pytest.fixture()
+def example_xy_objects_single_players() -> Tuple[XY, XY]:
+    xy1 = XY(np.array(((0, 0), (5, 5), (10, 10))), framerate=20)
+    xy2 = XY(np.array(((100, 0), (105, 5), (110, 10))), framerate=20)
+    return xy1, xy2
