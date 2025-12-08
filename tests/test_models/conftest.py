@@ -28,6 +28,21 @@ def example_xy_object_geometry():
     return xy
 
 
+# sample data with one frame having all nan (horizontal nan slice)
+@pytest.fixture()
+def example_xy_object_geometry_horizontal_nan():
+    xy = XY(
+        np.array(
+            (
+                (1, 1, 2, -2, 3, 3),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (1.5, 2, 3, 4, 5, 6),
+            )
+        )
+    )
+    return xy
+
+
 # sample data for testing kinematic models
 @pytest.fixture()
 def example_xy_object_kinematics():
@@ -89,4 +104,46 @@ def example_xy_objects_space_control() -> Tuple[XY, XY]:
         framerate=20,
     )
 
+    return xy1, xy2
+
+
+# sample data with one frame having all nan (horizontal nan slice) for two teams
+@pytest.fixture()
+def example_xy_objects_horizontal_nan() -> Tuple[XY, XY]:
+    xy1 = XY(
+        xy=np.array(
+            (
+                (0, 0, 10, 10, 20, 20),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (5, 5, 15, 15, 25, 25),
+            )
+        ),
+        framerate=20,
+    )
+    xy2 = XY(
+        xy=np.array(
+            (
+                (100, 0, 110, 10, 120, 20),
+                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
+                (105, 5, 115, 15, 125, 25),
+            )
+        ),
+        framerate=20,
+    )
+
+    return xy1, xy2
+
+
+# sample data with single player
+@pytest.fixture()
+def example_xy_object_single_player():
+    xy = XY(np.array(((1, 1), (2, 2), (3, 3))))
+    return xy
+
+
+# sample data with single player for two teams
+@pytest.fixture()
+def example_xy_objects_single_players() -> Tuple[XY, XY]:
+    xy1 = XY(np.array(((0, 0), (5, 5), (10, 10))), framerate=20)
+    xy2 = XY(np.array(((100, 0), (105, 5), (110, 10))), framerate=20)
     return xy1, xy2

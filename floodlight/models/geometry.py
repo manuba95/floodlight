@@ -209,3 +209,253 @@ class CentroidModel(BaseModel):
         )
 
         return stretch_index
+
+
+class NearestMateModel(BaseModel):
+    """Computations for within-team distance metrics.
+
+    Upon calling the :func:`~NearestMateModel.fit`-method, this model
+    calculates pairwise distances between all players for each frame. The
+    following calculations can subsequently be queried by calling the
+    corresponding methods:
+
+        - Distance to Nearest Mate
+          --> :func:`~NearestMateModel.distance_to_nearest_mate`
+        - Team Spread [3]_ --> :func:`~NearestMateModel.team_spread`
+
+    Notes
+    -----
+    The calculations are performed as follows:
+
+    - *Distance to Nearest Mate (DTNM)*:
+        For each player in each frame, the Euclidean distance to their nearest
+        teammate is computed.
+
+    - *Team Spread*:
+        The Frobenius norm of the lower triangular matrix of all pairwise player
+        distances, representing the overall dispersion of the team.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from floodlight import XY
+    >>> from floodlight.models.geometry import NearestMateModel
+
+    >>> xy = XY(np.array(((1, 1, 2, -2), (1.5, np.nan, np.nan, -0))))
+    >>> nmm = NearestMateModel()
+    >>> nmm.fit(xy)
+
+    >>> dtnm = nmm.distance_to_nearest_mate()
+    >>> dtnm
+    PlayerProperty(property=array([[3.16227766, 3.16227766],
+           [nan, nan]]), name='distance_to_nearest_mate', framerate=None)
+    >>> dtnm.property.mean(axis=1)  # Mean distance per frame
+    array([3.16227766, nan])
+
+    >>> nmm.team_spread()
+    TeamProperty(property=array([[3.16227766],
+           [nan]]), name='team_spread', framerate=None)
+
+    References
+    ----------
+        .. [3] `Bartlett, R., Button, C., Robins, M., Dutt-Mazumder, A., & Kennedy,
+            G. (2012). Analysing team coordination patterns from player movement
+            trajectories in soccer: Methodological considerations. International
+            Journal of Performance Analysis in Sport, 12(2), 398-424.
+            <https://www.tandfonline.com/doi/abs/10.1080/24748668.2012.11868607>`_
+
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._pairwise_distances_ = None
+        self._framerate = None
+
+    def fit(self, xy: XY):
+        """Fit the model to the given data and calculate pairwise distances.
+
+        Parameters
+        ----------
+        xy: XY
+            Player spatiotemporal data for which the pairwise distances are
+            calculated.
+        """
+        self._framerate = xy.framerate
+        # Initialize distance array with fixed shape (T, N, N)
+        self._pairwise_distances_ = np.full((len(xy), xy.N, xy.N), np.nan)
+
+        for t in range(len(xy)):
+            # Get coordinates for all players
+            coords = xy.frame(t).reshape(-1, 2)
+
+            # Calculate pairwise distances (NaN propagates naturally)
+            self._pairwise_distances_[t] = cdist(coords, coords)
+            # Set diagonal to NaN (self-distances are meaningless)
+            np.fill_diagonal(self._pairwise_distances_[t], np.nan)
+
+    @requires_fit
+    def distance_to_nearest_mate(self) -> PlayerProperty:
+        """Calculates the distance to the nearest teammate for each player.
+
+        Returns
+        -------
+        distance_to_nearest_mate: PlayerProperty
+            A PlayerProperty object of shape (T, N), where T is the total number
+            of frames and N is the number of players. Each entry contains the
+            distance to the nearest teammate for that player in that frame.
+        """
+        T, N, _ = self._pairwise_distances_.shape
+        dtnm = np.full((T, N), np.nan)
+
+        with warnings.catch_warnings():
+            # suppress warnings caused by all-NaN slices
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            for t in range(T):
+                # Calculate minimum distance per player (NaN values ignored)
+                dtnm[t] = np.nanmin(self._pairwise_distances_[t], axis=1)
+
+        return PlayerProperty(
+            property=dtnm,
+            name="distance_to_nearest_mate",
+            framerate=self._framerate,
+        )
+
+    @requires_fit
+    def team_spread(self) -> TeamProperty:
+        """Calculates the team spread (Frobenius norm of distance matrix).
+
+        Returns
+        -------
+        spread: TeamProperty
+            A TeamProperty object of shape (T, 1), where T is the total number of
+            frames. Each entry contains the team spread (Frobenius norm of the
+            pairwise distance matrix) for that frame.
+        """
+        T = len(self._pairwise_distances_)
+        spread = np.full((T, 1), np.nan)
+
+        for t in range(T):
+            distances = self._pairwise_distances_[t]
+            # Check if all distances are NaN (no valid players)
+            if np.isnan(distances).all():
+                continue
+            # Calculate Frobenius norm of lower triangular matrix
+            # Replace NaN with 0 (missing distances don't contribute)
+            spread[t] = np.linalg.norm(np.nan_to_num(np.tril(distances)), ord="fro")
+
+        return TeamProperty(
+            property=spread, name="team_spread", framerate=self._framerate
+        )
+
+
+class NearestOpponentModel(BaseModel):
+    """Computations for between-team distance metrics.
+
+    Upon calling the :func:`~NearestOpponentModel.fit`-method, this model
+    calculates pairwise distances between players of opposing teams. The
+    following calculations can subsequently be queried:
+
+        - Distance to Nearest Opponent [4]_
+          --> :func:`~NearestOpponentModel.distance_to_nearest_opponent`
+
+    Notes
+    -----
+    For each player in each frame, the Euclidean distance to their nearest
+    opponent is computed.
+
+    References
+    ----------
+
+        .. [4] `Gonçalves, B., Marcelino, R., Torres-Ronda, L., Torrents, C., & Sampaio,
+            J. (2016). Effects of emphasising opposition and cooperation on collective
+            movement behaviour during football small-sided games. Journal of sports
+            sciences, 34(14), 1346-1354.
+            <https://www.tandfonline.com/doi/full/10.1080/02640414.2016.1143111>`_
+
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from floodlight import XY
+    >>> from floodlight.models.geometry import NearestOpponentModel
+
+    >>> xy1 = XY(np.array(((1, 1, 2, -2), (1.5, np.nan, np.nan, -0))))
+    >>> xy2 = XY(np.array(((2, 2, -1, -1), (0.5, np.nan, np.nan, 1))))
+    >>> nom = NearestOpponentModel()
+    >>> nom.fit(xy1, xy2)
+
+    >>> dtno1, dtno2 = nom.distance_to_nearest_opponent()
+    >>> dtno1
+    PlayerProperty(property=array([[1.41421356, 3.16227766],
+           [nan, nan]]), name='distance_to_nearest_opponent', framerate=None)
+    >>> dtno1.property.mean(axis=1)  # Mean distance per frame
+    array([2.28824561, nan])
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._pairwise_distances_ = None
+        self._framerate = None
+
+    def fit(self, xy1: XY, xy2: XY):
+        """Fit the model to the given data and calculate pairwise distances.
+
+        Parameters
+        ----------
+        xy1: XY
+            Player spatiotemporal data for the first team.
+        xy2: XY
+            Player spatiotemporal data for the second team.
+        """
+        self._framerate = xy1.framerate
+        # Initialize distance array with fixed shape (T, N1, N2)
+        self._pairwise_distances_ = np.full((len(xy1), xy1.N, xy2.N), np.nan)
+
+        for t in range(len(xy1)):
+            # Get coordinates for all players (NaN values preserved)
+            coords1 = xy1.frame(t).reshape(-1, 2)
+            coords2 = xy2.frame(t).reshape(-1, 2)
+
+            # Calculate pairwise distances (NaN propagates naturally)
+            self._pairwise_distances_[t] = cdist(coords1, coords2)
+
+    @requires_fit
+    def distance_to_nearest_opponent(
+        self,
+    ) -> tuple[PlayerProperty, PlayerProperty]:
+        """Calculates distance to nearest opponent for each player on both teams.
+
+        Returns
+        -------
+        distance_to_nearest_opponent: tuple[PlayerProperty, PlayerProperty]
+            A tuple of two PlayerProperty objects of shape (T, N) containing distances
+            to nearest opponent for each player in the first and second team for each
+            frame.
+        """
+        T, N1, N2 = self._pairwise_distances_.shape
+        dtno1 = np.full((T, N1), np.nan)
+        dtno2 = np.full((T, N2), np.nan)
+
+        with warnings.catch_warnings():
+            # suppress warnings caused by all-NaN slices
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            for t in range(T):
+                distances = self._pairwise_distances_[t]
+
+                # Calculate minimum distance per player for each team (NaN ignored)
+                dtno1[t] = np.nanmin(distances, axis=1)
+                dtno2[t] = np.nanmin(distances, axis=0)
+
+        return (
+            PlayerProperty(
+                property=dtno1,
+                name="distance_to_nearest_opponent",
+                framerate=self._framerate,
+            ),
+            PlayerProperty(
+                property=dtno2,
+                name="distance_to_nearest_opponent",
+                framerate=self._framerate,
+            ),
+        )
