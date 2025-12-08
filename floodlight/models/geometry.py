@@ -220,18 +220,18 @@ class NearestMateModel(BaseModel):
     corresponding methods:
 
         - Distance to Nearest Mate
-        --> :func:`~NearestMateModel.distance_to_nearest_mate`
-        - Team Spread --> :func:`~NearestMateModel.team_spread`
+          --> :func:`~NearestMateModel.distance_to_nearest_mate`
+        - Team Spread [3]_ --> :func:`~NearestMateModel.team_spread`
 
     Notes
     -----
     The calculations are performed as follows:
 
-    - **Distance to Nearest Mate (DTNM)**:
+    - *Distance to Nearest Mate (DTNM)*:
         For each player in each frame, the Euclidean distance to their nearest
         teammate is computed.
 
-    - **Team Spread**:
+    - *Team Spread*:
         The Frobenius norm of the lower triangular matrix of all pairwise player
         distances, representing the overall dispersion of the team.
 
@@ -247,14 +247,24 @@ class NearestMateModel(BaseModel):
 
     >>> dtnm = nmm.distance_to_nearest_mate()
     >>> dtnm
-    PlayerProperty(property=array([[1.41421356, 1.41421356],
+    PlayerProperty(property=array([[3.16227766, 3.16227766],
            [nan, nan]]), name='distance_to_nearest_mate', framerate=None)
     >>> dtnm.property.mean(axis=1)  # Mean distance per frame
-    array([1.41421356, nan])
+    array([3.16227766, nan])
 
     >>> nmm.team_spread()
     TeamProperty(property=array([[3.16227766],
            [nan]]), name='team_spread', framerate=None)
+
+    References
+    ----------
+        .. [3] `Bartlett, R., Button, C., Robins, M., Dutt-Mazumder, A., & Kennedy,
+            G. (2012). Analysing team coordination patterns from player movement
+            trajectories in soccer: Methodological considerations. International
+            Journal of Performance Analysis in Sport, 12(2), 398-424.
+            <https://www.tandfonline.com/doi/abs/10.1080/24748668.2012.11868607>`_
+
+
     """
 
     def __init__(self):
@@ -262,7 +272,7 @@ class NearestMateModel(BaseModel):
         self._pairwise_distances_ = None
         self._framerate = None
 
-    def fit(self, xy: XY) -> None:
+    def fit(self, xy: XY):
         """Fit the model to the given data and calculate pairwise distances.
 
         Parameters
@@ -346,13 +356,23 @@ class NearestOpponentModel(BaseModel):
     calculates pairwise distances between players of opposing teams. The
     following calculations can subsequently be queried:
 
-        - Distance to Nearest Opponent
-        --> :func:`~NearestOpponentModel.distance_to_nearest_opponent`
+        - Distance to Nearest Opponent [4]_
+          --> :func:`~NearestOpponentModel.distance_to_nearest_opponent`
 
     Notes
     -----
     For each player in each frame, the Euclidean distance to their nearest
     opponent is computed.
+
+    References
+    ----------
+
+        .. [4] `Gonçalves, B., Marcelino, R., Torres-Ronda, L., Torrents, C., & Sampaio,
+            J. (2016). Effects of emphasising opposition and cooperation on collective
+            movement behaviour during football small-sided games. Journal of sports
+            sciences, 34(14), 1346-1354.
+            <https://www.tandfonline.com/doi/full/10.1080/02640414.2016.1143111>`_
+
 
     Examples
     --------
@@ -367,10 +387,10 @@ class NearestOpponentModel(BaseModel):
 
     >>> dtno1, dtno2 = nom.distance_to_nearest_opponent()
     >>> dtno1
-    PlayerProperty(property=array([[1.41421356, 3.60555128],
+    PlayerProperty(property=array([[1.41421356, 3.16227766],
            [nan, nan]]), name='distance_to_nearest_opponent', framerate=None)
     >>> dtno1.property.mean(axis=1)  # Mean distance per frame
-    array([2.50988242, nan])
+    array([2.28824561, nan])
     """
 
     def __init__(self):
@@ -378,7 +398,7 @@ class NearestOpponentModel(BaseModel):
         self._pairwise_distances_ = None
         self._framerate = None
 
-    def fit(self, xy1: XY, xy2: XY) -> None:
+    def fit(self, xy1: XY, xy2: XY):
         """Fit the model to the given data and calculate pairwise distances.
 
         Parameters
