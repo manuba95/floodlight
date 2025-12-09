@@ -17,7 +17,7 @@ def aggregate_property_by_zones(
     This function bins frames based on the value of ``binning_property`` and
     aggregates values from ``property_to_aggregate`` within each zone. Common use
     cases include calculating distance covered per velocity zone or time spent in
-    different intensity zones.
+    different intensity zones [1]_.
 
     Parameters
     ----------
@@ -33,15 +33,17 @@ def aggregate_property_by_zones(
         intervals [min, max) where the minimum is inclusive and maximum is exclusive.
         For example, [(0, 2), (2, 4)] creates two zones: [0, 2) and [2, 4).
     zone_names: list[str], optional
-        Names for each zone. If None, zones are named as "**min** to **max**". Must
+        Names for each zone. If None, zones are named as "*min* to *max*". Must
         have the same length as ``zones`` if provided.
     aggregation: str, optional
         Aggregation function to apply within each zone. Options:
-        - 'sum': Sum of property values in zone
-        - 'count': Number of frames with valid data in zone
-        - 'mean': Average property value in zone
-        - 'min': Minimum property value in zone
-        - 'max': Maximum property value in zone
+
+        - "sum": Sum of property values in zone
+        - "count": Number of frames with valid data in zone
+        - "mean": Average property value in zone
+        - "min": Minimum property value in zone
+        - "max": Maximum property value in zone
+
         Default is 'sum'.
 
     Returns
@@ -55,6 +57,7 @@ def aggregate_property_by_zones(
     Notes
     -----
     Valid property combinations:
+
     - PlayerProperty by PlayerProperty: Both must have shape (T, N) with matching T and
       N
     - TeamProperty by TeamProperty: Both must have shape (T,) with matching T
@@ -63,6 +66,7 @@ def aggregate_property_by_zones(
       players.
 
     Invalid combination:
+
     - TeamProperty by PlayerProperty: Cannot bin a single team value using
       player-specific thresholds.
 
@@ -74,38 +78,52 @@ def aggregate_property_by_zones(
     --------
     Calculate distance covered in velocity zones for each player:
 
-    >>> from floodlight.models.kinematics import DistanceModel, VelocityModel
-    >>> # Fit models to XY data
-    >>> dm = DistanceModel()
-    >>> dm.fit(xy_data)
-    >>> distances = dm.cumulative_distance_covered()
-    >>> vm = VelocityModel()
-    >>> vm.fit(xy_data)
-    >>> velocities = vm.velocity()
+    >>> import numpy as np
+    >>> from floodlight import PlayerProperty
+    >>> from floodlight.metrics.zone_aggregation import aggregate_property_by_zones
+
+    >>> # Create sample data: 4 frames, 2 players
+    >>> distances = PlayerProperty(
+    ...     property=np.array([[10, 5], [10, 5], [10, 5], [10, 5]], dtype=float),
+    ...     name="distance"
+    ... )
+    >>> velocities = PlayerProperty(
+    ...     property=np.array([[1, 6], [3, 8], [1, 6], [3, 8]], dtype=float),
+    ...     name="velocity"
+    ... )
     >>> # Define velocity zones (m/s)
-    >>> zones = [(0, 2), (2, 4), (4, 7), (7, 100)]
-    >>> zone_names = ["Walking", "Jogging", "Running", "Sprinting"]
+    >>> zones = [(0, 2), (2, 4), (5, 9)]
+    >>> zone_names = ["Low", "Medium", "High"]
     >>> result = aggregate_property_by_zones(
     ...     distances, velocities, zones, zone_names, aggregation='sum'
     ... )
+    >>> result
+       Low  Medium  High
+    0  20.0    20.0   0.0
+    1   0.0     0.0  20.0
 
-    Calculate time spent (frame count) in each metabolic power zone:
+    Calculate time spent (frame count) in metabolic power zones:
 
-    >>> from floodlight.models.kinetics import MetabolicPowerModel
-    >>> mpm = MetabolicPowerModel()
-    >>> mpm.fit(xy_data)
-    >>> power = mpm.metabolic_power()
-    >>> zones = [(0, 10), (10, 20), (20, 35), (35, 100)]
+    >>> power = PlayerProperty(
+    ...     property=np.array([[5, 15], [8, 25], [12, 30], [6, 18]], dtype=float),
+    ...     name="power"
+    ... )
+    >>> zones = [(0, 10), (10, 20), (20, 35)]
     >>> result = aggregate_property_by_zones(
     ...     power, power, zones, aggregation='count'
     ... )
+    >>> result
+       0 to 10  10 to 20  20 to 35
+    0      3.0       1.0       0.0
+    1      0.0       2.0       2.0
 
     References
     ----------
     .. [1] `Miguel, M., Oliviera, R., Loureiro, N. Garcia-Rubio, J. & Ibáñez, S.
-        (2021). Load Measures in Training/Match Monitoring in Soccer: A Systematic
-        Review. International Journal of Environmental Research and Public Health,
-        18(5), 2721.<https://www.mdpi.com/1660-4601/18/5/2721>`_
+           (2021). Load Measures in Training/Match Monitoring in Soccer: A Systematic
+           Review. International Journal of Environmental Research and Public Health,
+           18(5), 2721.
+           <https://www.mdpi.com/1660-4601/18/5/2721>`_
     """
 
     n_zones = len(zones)

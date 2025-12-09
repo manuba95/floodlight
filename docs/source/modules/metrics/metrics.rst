@@ -9,6 +9,7 @@ Collection of functions for calculations of performance metrics.
    :caption: Submodule Reference
 
    entropy
+   zone_aggregation
 
 
 .. rubric:: Performance Metrics
@@ -18,3 +19,4 @@ Collection of functions for calculations of performance metrics.
    :nosignatures:
 
    entropy.approx_entropy
+   zone_aggregation.aggregate_property_by_zones
