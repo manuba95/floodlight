@@ -186,6 +186,10 @@ def aggregate_property_by_zones(
         # Create mask for frames in this zone (half-open interval [min, max))
         in_zone_mask = np.bitwise_and(binning_prop >= min_val, binning_prop < max_val)
 
+        # Broadcast mask if needed (PlayerProperty by TeamProperty case)
+        if in_zone_mask.shape != prop_to_agg.shape:
+            in_zone_mask = np.broadcast_to(in_zone_mask, prop_to_agg.shape)
+
         # Mask the property to aggregate
         masked_property = np.ma.masked_array(prop_to_agg, ~in_zone_mask)
 
