@@ -191,7 +191,7 @@ class CentroidModel(BaseModel):
         Returns
         -------
         stretch_index: TeamProperty
-            A TeamProperty object of shape (T, 1), where T is the total number of
+            A TeamProperty object of shape (T,), where T is the total number of
             frames. Each entry contains the stretch index of that particular frame.
         """
         # get player distances from centroid
@@ -253,8 +253,7 @@ class NearestMateModel(BaseModel):
     array([3.16227766, nan])
 
     >>> nmm.team_spread()
-    TeamProperty(property=array([[3.16227766],
-           [nan]]), name='team_spread', framerate=None)
+    TeamProperty(property=array([3.16227766, nan]), name='team_spread', framerate=None)
 
     References
     ----------
@@ -328,12 +327,12 @@ class NearestMateModel(BaseModel):
         Returns
         -------
         spread: TeamProperty
-            A TeamProperty object of shape (T, 1), where T is the total number of
+            A TeamProperty object of shape (T,), where T is the total number of
             frames. Each entry contains the team spread (Frobenius norm of the
             pairwise distance matrix) for that frame.
         """
         T = len(self._pairwise_distances_)
-        spread = np.full((T, 1), np.nan)
+        spread = np.full(T, np.nan)
 
         for t in range(T):
             distances = self._pairwise_distances_[t]

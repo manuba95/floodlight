@@ -132,7 +132,7 @@ def test_nearest_mate_model_team_spread(example_xy_object_geometry):
     spread = model.team_spread()
 
     # Assert
-    expected = np.array(((np.sqrt(10),), (np.nan,)))
+    expected = np.array((np.sqrt(10), np.nan))
     assert np.array_equal(spread.property, expected, equal_nan=True)
 
 
@@ -177,7 +177,7 @@ def test_nearest_mate_model_horizontal_nan_slice(
         )
     )
     assert np.array_equal(dtnm.property, expected_dtnm, equal_nan=True)
-    assert np.isnan(spread.property[1, 0])
+    assert np.isnan(spread.property[1])
 
 
 # Test NearestMateModel with single player
@@ -194,7 +194,7 @@ def test_nearest_mate_model_single_player(example_xy_object_single_player):
 
     # Assert
     expected_dtnm = np.array(((np.nan,), (np.nan,), (np.nan,)))
-    expected_spread = np.array(((np.nan,), (np.nan,), (np.nan,)))
+    expected_spread = np.array((np.nan, np.nan, np.nan))
     assert np.array_equal(dtnm.property, expected_dtnm, equal_nan=True)
     assert np.array_equal(spread.property, expected_spread, equal_nan=True)
 
