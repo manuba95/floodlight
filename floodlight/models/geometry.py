@@ -2,6 +2,8 @@ import warnings
 
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.spatial import ConvexHull
+import matplotlib.pyplot as plt
 
 from floodlight import XY
 from floodlight.core.property import TeamProperty, PlayerProperty
@@ -458,3 +460,341 @@ class NearestOpponentModel(BaseModel):
                 framerate=self._framerate,
             ),
         )
+
+
+class ConvexHullModel(BaseModel):
+    """Computations based on the convex hull of player positions.
+
+    Upon calling the :func:`~ConvexHullModel.fit` method, this model
+    calculates convex hull objects for each frame. The following
+    calculations can subsequently be queried by calling the
+    corresponding methods:
+
+        - Convex Hull Area --> :func:`~ConvexHullModel.convex_hull_area`
+        - Convex Hull Visualization --> :func:`~ConvexHullModel.plot`
+
+    Notes
+    -----
+    The convex hull is computed using the `ConvexHull class
+    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.ConvexHull.html>`_
+    from scipy.spatial and can be understood as the minimal convex area
+    containing all (outfield) players.
+
+    The convex hull is also known in the literature under the terms
+    'surface area', 'coverage area' and 'playing area' [5]_.
+
+    When multiple XY objects are provided, all players from all teams
+    are combined and the convex hull encompasses all of them. This is
+    commonly referred to as the *Effective Playing Space (EPS)* [6]_.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from floodlight import XY
+    >>> from floodlight.models.geometry import ConvexHullModel
+
+    Single team convex hull (excluding goalkeeper):
+
+    >>> xy = XY(np.array([[0, 0, 10, 0, 10, 10, 0, 10],
+    ...                   [0, 0, 10, 0,  5, 10, 5,  5]]))
+    >>> model = ConvexHullModel()
+    >>> model.fit(xy, exclude_xIDs=[[0]])
+    >>> area = model.convex_hull_area()
+    >>> area
+    TeamProperty(property=array([100., 75.]), name='convex_hull_area', framerate=None)
+
+    Effective Playing Space (both teams):
+
+    >>> xy_home = XY(np.array([[10, 10, 20, 20], [10, 20, 10, 20]]))
+    >>> xy_away = XY(np.array([[50, 50, 60, 60], [50, 60, 50, 60]]))
+    >>> model = ConvexHullModel()
+    >>> model.fit([xy_home, xy_away])
+    >>> eps = model.convex_hull_area()
+
+    Visualize convex hull on pitch:
+
+    >>> import matplotlib.pyplot as plt
+    >>> from floodlight.vis.pitches import plot_football_pitch
+    >>> fig, ax = plt.subplots()
+    >>> plot_football_pitch(xlim=(0, 105), ylim=(0, 68), ax=ax)
+    >>> model.plot(frame=0, ax=ax, color='blue')
+    >>> plt.show()
+
+    References
+    ----------
+        .. [5] `Low, B., Coutinho, D., Gonçalves, B., Rein, R., Memmert, D., &
+            Sampaio, J. (2020). A Systematic Review of Collective Tactical
+            Behaviours in Football Using Positional Data. Sports Medicine,
+            50(2), 343–385.
+            <https://link.springer.com/article/10.1007/s40279-019-01194-7>`_
+        .. [6] `Baptista, J., Travassos, B., Gonçalves, B., Mourão, P., Viana,
+            J. L., & Sampaio, J. (2019). Exploring the effects of playing
+            formations on tactical behavior and external workload during football
+            small-sided games. Journal of Strength and Conditioning Research,
+            34(7), 2024-2030.
+            <https://journals.lww.com/nsca-jscr/Abstract/2020/07000/Exploring_the_Effects_of_Playing_Formations_on.32.aspx>`_
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._convex_hulls_ = None
+        self._framerate = None
+
+    def fit(self, xy: XY | list[XY], exclude_xIDs: list[list] | None = None):
+        """Fit the model to the given data and calculate convex hulls.
+
+        Parameters
+        ----------
+        xy : XY or list[XY]
+            Single XY object or list of XY objects. If list, all XY objects
+            will be combined and the convex hull will encompass all players
+            (effective playing space).
+        exclude_xIDs : list[list], optional
+            For each XY object, a list of xIDs to exclude from computation.
+            This can be useful to exclude goalkeepers from analysis.
+            Length must match number of XY objects.
+
+            Examples:
+
+            - Single XY with GK excluded: ``[[0]]``
+            - Two XYs with both GKs excluded: ``[[0], [0]]``
+        """
+        # Normalize inputs to lists
+        xy_list = [xy] if isinstance(xy, XY) else xy
+
+        if exclude_xIDs is None:
+            exclude_xIDs = [None] * len(xy_list)
+        elif len(exclude_xIDs) != len(xy_list):
+            raise ValueError(
+                f"exclude_xIDs length ({len(exclude_xIDs)}) must match "
+                f"number of XY objects ({len(xy_list)})"
+            )
+
+        T = len(xy_list[0])
+        self._framerate = xy_list[0].framerate
+
+        # Validate all XY objects have same length
+        for i, xy_obj in enumerate(xy_list[1:], start=1):
+            if len(xy_obj) != T:
+                raise ValueError(
+                    f"All XY objects must have same length. "
+                    f"xy[0] has {T} frames, xy[{i}] has {len(xy_obj)} frames"
+                )
+
+        # Concatenate all XY arrays
+        xy_arrays = [xy_obj.xy for xy_obj in xy_list]
+        combined_xy = np.hstack(xy_arrays)
+
+        # Create validity mask
+        valid_mask = self._create_validity_mask(xy_list, exclude_xIDs)
+
+        # Calculate convex hull for each frame
+        self._convex_hulls_ = []
+        for t in range(T):
+            hull = self._calculate_convex_hull_for_frame(combined_xy[t], valid_mask)
+            self._convex_hulls_.append(hull)
+
+    def _create_validity_mask(
+        self, xy_list: list[XY], exclude_xIDs: list[list | None]
+    ) -> np.ndarray:
+        """Create a boolean mask indicating which coordinates to include.
+
+        Parameters
+        ----------
+        xy_list : list[XY]
+            List of XY objects.
+        exclude_xIDs : list[list | None]
+            Exclusion lists for each XY object.
+
+        Returns
+        -------
+        valid_mask : np.ndarray
+            Boolean array where True = include coordinate, False = exclude.
+            Shape matches total number of coordinates in concatenated XY.
+        """
+        masks = []
+
+        for xy_obj, excl in zip(xy_list, exclude_xIDs):
+            # Start with all True (include all)
+            mask = np.ones(xy_obj.N * 2, dtype=bool)
+
+            if excl is not None:
+                for xid in excl:
+                    if xid < 0 or xid >= xy_obj.N:
+                        raise ValueError(
+                            f"xID {xid} out of range [0, {xy_obj.N-1}] "
+                            f"for XY object with {xy_obj.N} players"
+                        )
+                    # Exclude both x and y coordinates
+                    mask[xid * 2] = False
+                    mask[xid * 2 + 1] = False
+
+            masks.append(mask)
+
+        # Concatenate all masks
+        return np.concatenate(masks)
+
+    def _calculate_convex_hull_for_frame(
+        self, frame_data: np.ndarray, valid_mask: np.ndarray
+    ) -> ConvexHull | None:
+        """Calculate convex hull for a single frame.
+
+        Parameters
+        ----------
+        frame_data : np.ndarray
+            Frame data (1D array of all coordinates).
+        valid_mask : np.ndarray
+            Boolean mask indicating which coordinates to include.
+
+        Returns
+        -------
+        hull : ConvexHull or None
+            ConvexHull object if successful, None if insufficient valid points.
+        """
+        # Exclude players (apply mask)
+        masked_data = frame_data[valid_mask]
+
+        # Reshape to (N, 2) coordinate pairs
+        points = masked_data.reshape(-1, 2)
+
+        # Exclude points with NaN
+        valid_points = points[~np.isnan(points).any(axis=1)]
+
+        # Check for at least 3 points
+        if len(valid_points) < 3:
+            return None
+
+        # Calculate ConvexHull (scipy handles collinearity/duplicates)
+        try:
+            return ConvexHull(valid_points)
+        except Exception:
+            # QhullError for collinear points, duplicates, or other geometric issues
+            return None
+
+    @requires_fit
+    def convex_hull_area(self) -> TeamProperty:
+        """Calculates the area enclosed by the convex hull.
+
+        Returns
+        -------
+        convex_hull_area : TeamProperty
+            A TeamProperty object of shape (T,), where T is the total number
+            of frames. Each entry contains the area enclosed by the convex
+            hull for that frame. Frames with insufficient valid points have
+            NaN values.
+
+        Notes
+        -----
+        If the model was fitted with:
+
+        - Single XY object: returns the team's convex hull area
+        - Multiple XY objects: returns the effective playing space (EPS)
+        """
+
+        areas = np.array(
+            [
+                hull.volume if hull is not None else np.nan
+                for hull in self._convex_hulls_
+            ]
+        )
+
+        return TeamProperty(
+            property=areas, name="convex_hull_area", framerate=self._framerate
+        )
+
+    @requires_fit
+    def plot(
+        self, t: int, ax=None, fill: bool = True, fill_alpha: float = 0.3, **kwargs
+    ):
+        """Plot the convex hull for a given time point on a matplotlib axes.
+
+        Parameters
+        ----------
+        t : int
+            Frame index to plot.
+        ax : matplotlib.axes.Axes, optional
+            Matplotlib axes to plot on. If None, a new figure and axes are created.
+        fill : bool, optional
+            Whether to fill the convex hull polygon. Default is True.
+        fill_alpha : float, optional
+            Transparency of the fill (0=transparent, 1=opaque). Default is 0.3.
+            Only used if fill=True.
+        **kwargs : optional
+            Additional keyword arguments passed to the line plot.
+            Common options:
+
+            - color : str, default 'grey'
+            - alpha : float, default 1.0 (line transparency)
+            - linewidth : float, default 2
+            - label : str
+            - linestyle : str (e.g., '--', ':')
+            - Any other matplotlib.axes.Axes.plot() parameters
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes object with the convex hull plotted.
+
+        Notes
+        -----
+        The kwargs are passed to the plot function of matplotlib for drawing the
+        hull boundary. To customize the plots have a look at
+        `matplotlib
+        <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.plot.html>`_.
+
+        Examples
+        --------
+        >>> import matplotlib.pyplot as plt
+        >>> from floodlight.vis.pitches import plot_football_pitch
+        >>>
+        >>> fig, ax = plt.subplots()
+        >>> plot_football_pitch(xlim=(0, 105), ylim=(0, 68), ax=ax)
+        >>>
+        >>> # Filled hull with custom color
+        >>> model.plot(t=0, ax=ax, color='blue', fill_alpha=0.2)
+        >>>
+        >>> # Outline only, no fill
+        >>> model.plot(t=0, ax=ax, fill=False, color='green', linewidth=3)
+        >>>
+        >>> # Custom line and fill transparency
+        >>> model.plot(t=0, ax=ax, alpha=0.8, fill_alpha=0.1)
+        >>>
+        >>> # Dashed line style
+        >>> model.plot(t=0, ax=ax, linestyle='--', color='red')
+        >>> plt.show()
+        """
+
+        ax = ax or plt.subplots()[1]
+
+        hull = self._convex_hulls_[t]
+
+        # Handle None hull - return axes
+        if hull is None:
+            return ax
+
+        # Extract plotting parameters with defaults
+        color = kwargs.pop("color", "grey")
+        linewidth = kwargs.pop("linewidth", 2)
+
+        # Get hull vertices
+        points = hull.points
+        vertices = hull.vertices
+
+        # Close the polygon
+        vertices_closed = np.append(vertices, vertices[0])
+        hull_points = points[vertices_closed]
+
+        # Plot boundary
+        ax.plot(
+            hull_points[:, 0],
+            hull_points[:, 1],
+            color=color,
+            linewidth=linewidth,
+            **kwargs,
+        )
+
+        # Fill if requested
+        if fill:
+            ax.fill(hull_points[:, 0], hull_points[:, 1], color=color, alpha=fill_alpha)
+
+        return ax
