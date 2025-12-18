@@ -2,7 +2,7 @@ import warnings
 
 import numpy as np
 from scipy.spatial.distance import cdist
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 import matplotlib.pyplot as plt
 
 from floodlight import XY
@@ -223,7 +223,7 @@ class NearestMateModel(BaseModel):
 
         - Distance to Nearest Mate
           --> :func:`~NearestMateModel.distance_to_nearest_mate`
-        - Team Spread [3]_ --> :func:`~NearestMateModel.team_spread`
+        - Team Spread [5]_ --> :func:`~NearestMateModel.team_spread`
 
     Notes
     -----
@@ -259,7 +259,7 @@ class NearestMateModel(BaseModel):
 
     References
     ----------
-        .. [3] `Bartlett, R., Button, C., Robins, M., Dutt-Mazumder, A., & Kennedy,
+        .. [5] `Bartlett, R., Button, C., Robins, M., Dutt-Mazumder, A., & Kennedy,
             G. (2012). Analysing team coordination patterns from player movement
             trajectories in soccer: Methodological considerations. International
             Journal of Performance Analysis in Sport, 12(2), 398-424.
@@ -357,7 +357,7 @@ class NearestOpponentModel(BaseModel):
     calculates pairwise distances between players of opposing teams. The
     following calculations can subsequently be queried:
 
-        - Distance to Nearest Opponent [4]_
+        - Distance to Nearest Opponent [6]_
           --> :func:`~NearestOpponentModel.distance_to_nearest_opponent`
 
     Notes
@@ -368,7 +368,7 @@ class NearestOpponentModel(BaseModel):
     References
     ----------
 
-        .. [4] `Gonçalves, B., Marcelino, R., Torres-Ronda, L., Torrents, C., & Sampaio,
+        .. [6] `Gonçalves, B., Marcelino, R., Torres-Ronda, L., Torrents, C., & Sampaio,
             J. (2016). Effects of emphasising opposition and cooperation on collective
             movement behaviour during football small-sided games. Journal of sports
             sciences, 34(14), 1346-1354.
@@ -465,27 +465,26 @@ class NearestOpponentModel(BaseModel):
 class ConvexHullModel(BaseModel):
     """Computations based on the convex hull of player positions.
 
-    Upon calling the :func:`~ConvexHullModel.fit` method, this model
-    calculates convex hull objects for each frame. The following
-    calculations can subsequently be queried by calling the
-    corresponding methods:
+    Upon calling the :func:`~ConvexHullModel.fit` method, this model calculates convex
+    hull objects for each frame. The following calculations can subsequently be queried
+    by calling the corresponding methods:
 
         - Convex Hull Area --> :func:`~ConvexHullModel.convex_hull_area`
         - Convex Hull Visualization --> :func:`~ConvexHullModel.plot`
 
     Notes
     -----
-    The convex hull is computed using the `ConvexHull class
-    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.ConvexHull.html>`_
-    from scipy.spatial and can be understood as the minimal convex area
-    containing all (outfield) players.
+    The convex hull is computed using scipy's `ConvexHull class
+    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.ConvexHull.
+    html>`_ and can be understood as the minimal convex area containing all (outfield)
+    players.
 
-    The convex hull is also known in the literature under the terms
-    'surface area', 'coverage area' and 'playing area' [5]_.
+    The convex hull is also known in the literature under the terms 'surface area',
+    'coverage area' and 'playing area' [3]_.
 
-    When multiple XY objects are provided, all players from all teams
-    are combined and the convex hull encompasses all of them. This is
-    commonly referred to as the *Effective Playing Space (EPS)* [6]_.
+    When multiple XY objects are provided, all players from all teams are combined and
+    the convex hull encompasses all of them. This is commonly referred to as the
+    *Effective Area of Play (EAP)* [4]_.
 
     Examples
     --------
@@ -497,42 +496,33 @@ class ConvexHullModel(BaseModel):
 
     >>> xy = XY(np.array([[0, 0, 10, 0, 10, 10, 0, 10],
     ...                   [0, 0, 10, 0,  5, 10, 5,  5]]))
-    >>> model = ConvexHullModel()
-    >>> model.fit(xy, exclude_xIDs=[[0]])
-    >>> area = model.convex_hull_area()
-    >>> area
-    TeamProperty(property=array([100., 75.]), name='convex_hull_area', framerate=None)
+    >>> chm = ConvexHullModel()
+    >>> chm.fit(xy, exclude_xIDs=[[0]])
+    >>> chull = chm.convex_hull_area()
+    >>> chull
+    TeamProperty(property=array([50., 12.5]), name='convex_hull_area', framerate=None)
 
-    Effective Playing Space (both teams):
+    Effective Area of Play (both teams):
 
-    >>> xy_home = XY(np.array([[10, 10, 20, 20], [10, 20, 10, 20]]))
-    >>> xy_away = XY(np.array([[50, 50, 60, 60], [50, 60, 50, 60]]))
-    >>> model = ConvexHullModel()
-    >>> model.fit([xy_home, xy_away])
-    >>> eps = model.convex_hull_area()
-
-    Visualize convex hull on pitch:
-
-    >>> import matplotlib.pyplot as plt
-    >>> from floodlight.vis.pitches import plot_football_pitch
-    >>> fig, ax = plt.subplots()
-    >>> plot_football_pitch(xlim=(0, 105), ylim=(0, 68), ax=ax)
-    >>> model.plot(frame=0, ax=ax, color='blue')
-    >>> plt.show()
+    >>> xy_home = XY(np.array([[0, 10, 20, 20], [10, 20, 10, 20]]))
+    >>> xy_away = XY(np.array([[40, 50, 60, 60], [50, 70, 50, 60]]))
+    >>> chm = ConvexHullModel()
+    >>> chm.fit([xy_home, xy_away])
+    >>> eap = chm.convex_hull_area()
+    >>> eap
+    TeamProperty(property=array([400., 200.]), name='convex_hull_area', framerate=None)
 
     References
     ----------
-        .. [5] `Low, B., Coutinho, D., Gonçalves, B., Rein, R., Memmert, D., &
-            Sampaio, J. (2020). A Systematic Review of Collective Tactical
-            Behaviours in Football Using Positional Data. Sports Medicine,
-            50(2), 343–385.
-            <https://link.springer.com/article/10.1007/s40279-019-01194-7>`_
-        .. [6] `Baptista, J., Travassos, B., Gonçalves, B., Mourão, P., Viana,
-            J. L., & Sampaio, J. (2019). Exploring the effects of playing
-            formations on tactical behavior and external workload during football
-            small-sided games. Journal of Strength and Conditioning Research,
-            34(7), 2024-2030.
-            <https://journals.lww.com/nsca-jscr/Abstract/2020/07000/Exploring_the_Effects_of_Playing_Formations_on.32.aspx>`_
+        .. [3] `Moura, F. A., Martins, L. E. B., Anido, R. D. O., De Barros, R. M. L., &
+            Cunha, S. A. (2012). Quantitative analysis of Brazilian football players'
+            organisation on the pitch. Sports biomechanics, 11(1), 85-96.
+            <https://www.tandfonline.com/doi/full/10.1080/14763141.2011.637123>`_
+        .. [4] `Clemente, M. F., Couceiro, S. M., Martins, F. M., Mendes, R., &
+            Figueiredo, A. J. (2013). Measuring Collective Behaviour in Football Teams:
+            Inspecting the impact of each half of the match on ball possession.
+            International Journal of Performance Analysis in Sport, 13(3), 678-689.
+            <https://www.tandfonline.com/doi/abs/10.1080/24748668.2013.11868680>`_
     """
 
     def __init__(self):
@@ -546,18 +536,18 @@ class ConvexHullModel(BaseModel):
         Parameters
         ----------
         xy : XY or list[XY]
-            Single XY object or list of XY objects. If list, all XY objects
-            will be combined and the convex hull will encompass all players
-            (effective playing space).
+            Single XY object or list of XY objects. If list, all XY objects will be
+            combined and the convex hull will encompass all players (effective playing
+            space).
         exclude_xIDs : list[list], optional
-            For each XY object, a list of xIDs to exclude from computation.
-            This can be useful to exclude goalkeepers from analysis.
-            Length must match number of XY objects.
+            For each XY object, a list of xIDs to exclude from computation. This can be
+            useful to exclude goalkeepers from analysis. Length must match number of XY
+            objects.
 
             Examples:
 
-            - Single XY with GK excluded: ``[[0]]``
-            - Two XYs with both GKs excluded: ``[[0], [0]]``
+            - Single XY with `xID=0` excluded: ``[[0]]``
+            - Two XYs with both `xID=0` excluded: ``[[0], [0]]``
         """
         # Normalize inputs to lists
         xy_list = [xy] if isinstance(xy, XY) else xy
@@ -617,7 +607,6 @@ class ConvexHullModel(BaseModel):
         for xy_obj, excl in zip(xy_list, exclude_xIDs):
             # Start with all True (include all)
             mask = np.ones(xy_obj.N * 2, dtype=bool)
-
             if excl is not None:
                 for xid in excl:
                     if xid < 0 or xid >= xy_obj.N:
@@ -651,6 +640,9 @@ class ConvexHullModel(BaseModel):
         hull : ConvexHull or None
             ConvexHull object if successful, None if insufficient valid points.
         """
+
+        MIN_POINTS_FOR_CHULL = 3
+
         # Exclude players (apply mask)
         masked_data = frame_data[valid_mask]
 
@@ -661,13 +653,13 @@ class ConvexHullModel(BaseModel):
         valid_points = points[~np.isnan(points).any(axis=1)]
 
         # Check for at least 3 points
-        if len(valid_points) < 3:
+        if len(valid_points) < MIN_POINTS_FOR_CHULL:
             return None
 
         # Calculate ConvexHull (scipy handles collinearity/duplicates)
         try:
             return ConvexHull(valid_points)
-        except Exception:
+        except QhullError:
             # QhullError for collinear points, duplicates, or other geometric issues
             return None
 
@@ -678,17 +670,16 @@ class ConvexHullModel(BaseModel):
         Returns
         -------
         convex_hull_area : TeamProperty
-            A TeamProperty object of shape (T,), where T is the total number
-            of frames. Each entry contains the area enclosed by the convex
-            hull for that frame. Frames with insufficient valid points have
-            NaN values.
+            A TeamProperty object of shape (T,), where T is the total number of frames.
+            Each entry contains the area enclosed by the convex hull for that frame.
+            Frames with insufficient valid points have NaN values.
 
         Notes
         -----
         If the model was fitted with:
 
         - Single XY object: returns the team's convex hull area
-        - Multiple XY objects: returns the effective playing space (EPS)
+        - Multiple XY objects: returns the effective area of play (EAP)
         """
 
         areas = np.array(
@@ -723,10 +714,9 @@ class ConvexHullModel(BaseModel):
             Additional keyword arguments passed to the line plot.
             Common options:
 
-            - color : str, default 'grey'
+            - color : str, default 'black'
             - alpha : float, default 1.0 (line transparency)
             - linewidth : float, default 2
-            - label : str
             - linestyle : str (e.g., '--', ':')
             - Any other matplotlib.axes.Axes.plot() parameters
 
@@ -745,23 +735,24 @@ class ConvexHullModel(BaseModel):
         Examples
         --------
         >>> import matplotlib.pyplot as plt
-        >>> from floodlight.vis.pitches import plot_football_pitch
+        >>> from floodlight import Pitch
+        >>>
+        >>> pitch = Pitch(
+        ... xlim=(0, 105), ylim=(0, 68), sport="football", unit="m", boundaries="fixed"
+        ... )
         >>>
         >>> fig, ax = plt.subplots()
-        >>> plot_football_pitch(xlim=(0, 105), ylim=(0, 68), ax=ax)
+        >>> pitch.plot(ax=ax)
         >>>
         >>> # Filled hull with custom color
-        >>> model.plot(t=0, ax=ax, color='blue', fill_alpha=0.2)
-        >>>
-        >>> # Outline only, no fill
-        >>> model.plot(t=0, ax=ax, fill=False, color='green', linewidth=3)
-        >>>
-        >>> # Custom line and fill transparency
-        >>> model.plot(t=0, ax=ax, alpha=0.8, fill_alpha=0.1)
-        >>>
-        >>> # Dashed line style
-        >>> model.plot(t=0, ax=ax, linestyle='--', color='red')
-        >>> plt.show()
+        >>> chm.plot(t=0, ax=ax, color='blue', fill_alpha=0.2)
+
+        .. image:: ../../_img/sample_chm_plot_filled.png
+
+        >>> # Dashed outline, no fill
+        >>> chm.plot(t=0, ax=ax, fill=False, linestyle="--", linewidth=3)
+
+        .. image:: ../../_img/sample_chm_plot_dashed.png
         """
 
         ax = ax or plt.subplots()[1]
@@ -773,7 +764,7 @@ class ConvexHullModel(BaseModel):
             return ax
 
         # Extract plotting parameters with defaults
-        color = kwargs.pop("color", "grey")
+        color = kwargs.pop("color", "black")
         linewidth = kwargs.pop("linewidth", 2)
 
         # Get hull vertices
